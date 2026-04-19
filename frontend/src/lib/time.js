@@ -51,6 +51,16 @@ export function isSameDay(a, b) {
     a.getDate() === b.getDate();
 }
 
+export function isoToLocalInput(iso) {
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function localInputToIso(value) {
+  return new Date(value).toISOString();
+}
+
 export function fmtHour(h) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const ampm = h < 12 ? 'AM' : 'PM';

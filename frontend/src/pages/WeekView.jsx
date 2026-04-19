@@ -4,6 +4,7 @@ import {
   DAY_START_HOUR, HOUR_MS, weekStart, shiftDate,
   fmtWeekRangeLabel, fmtHour, isSameDay
 } from '../lib/time.js';
+import { useSwipe } from '../hooks/useSwipe.js';
 
 const HOUR_HEIGHT = 48;
 const COL_WIDTH = 96;
@@ -11,7 +12,7 @@ const GUTTER_WIDTH = 48;
 const HEADER_HEIGHT = 44;
 const BODY_HEIGHT = HOUR_HEIGHT * 24 + 20;
 
-export default function WeekView() {
+export default function WeekView({ onEntryClick, reloadKey = 0 }) {
   const [anchor, setAnchor] = useState(() => new Date());
   const [entries, setEntries] = useState([]);
   const scrollRef = useRef(null);
@@ -27,7 +28,7 @@ export default function WeekView() {
         console.error(err);
         setEntries([]);
       });
-  }, [start, end]);
+  }, [start, end, reloadKey]);
 
   const days = useMemo(() => {
     const today = new Date();
@@ -47,6 +48,11 @@ export default function WeekView() {
     y: i * HOUR_HEIGHT
   }));
 
+  const viewingCurrentWeek = useMemo(() => {
+    const today = weekStart(new Date());
+    return today.getTime() === start.getTime();
+  }, [start]);
+
   useEffect(() => {
     if (didInitialScroll.current || !scrollRef.current) return;
     const todayIdx = days.findIndex((d) => d.isToday);
@@ -56,15 +62,33 @@ export default function WeekView() {
     }
   }, [days]);
 
+  const swipeHandlers = useSwipe({
+    onSwipeLeft: () => setAnchor(shiftDate(anchor, 7)),
+    onSwipeRight: () => setAnchor(shiftDate(anchor, -7))
+  });
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b border-neutral-800"
+        {...swipeHandlers}
+      >
         <button
           onClick={() => setAnchor(shiftDate(anchor, -7))}
           className="w-10 h-10 flex items-center justify-center text-2xl text-neutral-400 active:text-neutral-100"
           aria-label="Previous week"
         >‹</button>
-        <span className="text-sm font-medium text-neutral-100">{fmtWeekRangeLabel(start)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-neutral-100">{fmtWeekRangeLabel(start)}</span>
+          {!viewingCurrentWeek && (
+            <button
+              onClick={() => setAnchor(new Date())}
+              className="px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 text-[10px] uppercase tracking-wider text-neutral-300 active:bg-neutral-700"
+            >
+              This week
+            </button>
+          )}
+        </div>
         <button
           onClick={() => setAnchor(shiftDate(anchor, 7))}
           className="w-10 h-10 flex items-center justify-center text-2xl text-neutral-400 active:text-neutral-100"
@@ -133,11 +157,18 @@ export default function WeekView() {
                   const visEnd = ee > d.end ? d.end : ee;
                   const top = ((es - d.start) / HOUR_MS) * HOUR_HEIGHT;
                   const height = ((visEnd - es) / HOUR_MS) * HOUR_HEIGHT;
+                  const isNight = e.type === 'night';
                   return (
-                    <div
+                    <button
                       key={e.id}
-                      className="absolute left-1 right-1 rounded bg-blue-500/85 border border-blue-400/60 shadow-sm"
+                      onClick={() => onEntryClick?.(e)}
+                      className={`absolute left-1 right-1 rounded shadow-sm transition-colors border ${
+                        isNight
+                          ? 'bg-indigo-500/85 border-indigo-400/60 active:bg-indigo-600'
+                          : 'bg-blue-500/85 border-blue-400/60 active:bg-blue-600'
+                      }`}
                       style={{ top, height: Math.max(height, 6) }}
+                      aria-label="Edit entry"
                     />
                   );
                 })}

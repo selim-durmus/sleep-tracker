@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '../lib/api.js';
-import { dayWindow, shiftDay, fmtDateLabel, fmtHour, fmtTimeShort, fmtHM, HOUR_MS, DAY_START_HOUR } from '../lib/time.js';
+import { dayWindow, shiftDay, fmtDateLabel, fmtHour, fmtTimeShort, fmtHM, HOUR_MS, DAY_START_HOUR, isSameDay } from '../lib/time.js';
+import { useSwipe } from '../hooks/useSwipe.js';
 
 const HOUR_HEIGHT = 64;
 
-export default function DayView() {
+export default function DayView({ onEntryClick, reloadKey = 0 }) {
   const [date, setDate] = useState(() => new Date());
   const [entries, setEntries] = useState([]);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const { start, end } = useMemo(() => dayWindow(date), [date]);
 
   const reload = useCallback(() => {
@@ -18,7 +20,22 @@ export default function DayView() {
       });
   }, [start, end]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { reload(); }, [reload, reloadKey]);
+
+  const viewingToday = useMemo(() => isSameDay(date, new Date()), [date]);
+
+  useEffect(() => {
+    if (!viewingToday) return;
+    const id = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, [viewingToday]);
+
+  const nowLineTop = useMemo(() => {
+    if (!viewingToday) return null;
+    const offset = nowTick - start.getTime();
+    if (offset < 0 || offset > HOUR_MS * 24) return null;
+    return (offset / HOUR_MS) * HOUR_HEIGHT;
+  }, [viewingToday, nowTick, start]);
 
   const totals = useMemo(() => {
     let nightMs = 0, napMs = 0;
@@ -48,15 +65,33 @@ export default function DayView() {
     y: i * HOUR_HEIGHT
   }));
 
+  const swipeHandlers = useSwipe({
+    onSwipeLeft: () => setDate(shiftDay(date, 1)),
+    onSwipeRight: () => setDate(shiftDay(date, -1))
+  });
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b border-neutral-800"
+        {...swipeHandlers}
+      >
         <button
           onClick={() => setDate(shiftDay(date, -1))}
           className="w-10 h-10 flex items-center justify-center text-2xl text-neutral-400 active:text-neutral-100"
           aria-label="Previous day"
         >‹</button>
-        <span className="text-sm font-medium text-neutral-100">{fmtDateLabel(date)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-neutral-100">{fmtDateLabel(date)}</span>
+          {!viewingToday && (
+            <button
+              onClick={() => setDate(new Date())}
+              className="px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 text-[10px] uppercase tracking-wider text-neutral-300 active:bg-neutral-700"
+            >
+              Today
+            </button>
+          )}
+        </div>
         <button
           onClick={() => setDate(shiftDay(date, 1))}
           className="w-10 h-10 flex items-center justify-center text-2xl text-neutral-400 active:text-neutral-100"
@@ -70,7 +105,7 @@ export default function DayView() {
         <Stat label="Total" ms={totals.totalMs} />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" {...swipeHandlers}>
         <div className="relative" style={{ height: HOUR_HEIGHT * 24 + 20 }}>
           {hourMarks.map(({ h, y }, i) => (
             <div key={i}>
@@ -91,16 +126,30 @@ export default function DayView() {
             style={{ top: 0, height: HOUR_HEIGHT * 24 }}
           >
             {blocks.map((b) => (
-              <div
+              <button
                 key={b.id}
-                className="absolute left-0 right-0 rounded-md bg-blue-500/80 border border-blue-400/60 px-2 py-1 text-[11px] text-white overflow-hidden shadow-sm"
+                onClick={() => onEntryClick?.(b)}
+                className={`absolute left-0 right-0 rounded-md px-2 py-1 text-[11px] text-white overflow-hidden shadow-sm text-left transition-colors border ${
+                  b.type === 'night'
+                    ? 'bg-indigo-500/80 border-indigo-400/60 active:bg-indigo-600'
+                    : 'bg-blue-500/80 border-blue-400/60 active:bg-blue-600'
+                }`}
                 style={{ top: b.top, height: Math.max(b.height, 20) }}
               >
                 <span className="tabular-nums whitespace-nowrap">
                   {fmtTimeShort(b.start_time)} – {fmtTimeShort(b.end_time)}
                 </span>
-              </div>
+              </button>
             ))}
+            {nowLineTop != null && (
+              <div
+                className="absolute left-0 right-0 pointer-events-none"
+                style={{ top: nowLineTop }}
+              >
+                <div className="absolute -left-2 -top-1 w-2 h-2 rounded-full bg-red-500" />
+                <div className="border-t border-red-500/80 w-full" />
+              </div>
+            )}
           </div>
         </div>
       </div>

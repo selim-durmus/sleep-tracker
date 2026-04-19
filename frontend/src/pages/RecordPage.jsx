@@ -1,33 +1,92 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTimer } from '../hooks/useTimer.js';
 import { api } from '../lib/api.js';
 import { formatDuration, classifyType } from '../lib/format.js';
+import { isoToLocalInput, localInputToIso, fmtHM, fmtTimeShort, dayWindow } from '../lib/time.js';
+import { buzz } from '../lib/haptic.js';
+import { useToast } from '../components/ToastProvider.jsx';
+import TimeAdjustButtons from '../components/TimeAdjustButtons.jsx';
+
+const AWAKE_ALARM_MS = 3.5 * 60 * 60 * 1000;
 
 export default function RecordPage() {
-  const { status, startedAt, elapsedMs, start, pause, resume, reset } = useTimer();
+  const { status, start, end, elapsedMs, startTimer, pause, resume, reset, updateStart, updateEnd } = useTimer();
   const [saving, setSaving] = useState(false);
+  const [latest, setLatest] = useState(null);
+  const [todayEntries, setTodayEntries] = useState([]);
+  const [, tick] = useState(0);
+  const showToast = useToast();
 
-  const type = startedAt ? classifyType(startedAt) : classifyType(new Date());
+  const classifyAt = start ?? Date.now();
+  const type = classifyType(classifyAt);
+
+  useEffect(() => {
+    if (status !== 'idle') return;
+    let cancelled = false;
+    api.latestEntry()
+      .then((entry) => { if (!cancelled) setLatest(entry); })
+      .catch(console.error);
+    const { start: dayStart, end: dayEnd } = dayWindow(new Date());
+    api.listEntries(dayStart.toISOString(), dayEnd.toISOString())
+      .then((rows) => { if (!cancelled) setTodayEntries(rows); })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== 'idle' || !latest) return;
+    const id = setInterval(() => tick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, [status, latest]);
+
+  const awakeMs = status === 'idle' && latest
+    ? Date.now() - new Date(latest.end_time).getTime()
+    : null;
+
+  const today = useMemo(() => {
+    const { start: dayStart, end: dayEnd } = dayWindow(new Date());
+    let napMs = 0, nightMs = 0, naps = 0;
+    for (const e of todayEntries) {
+      const s = new Date(e.start_time);
+      if (s < dayStart || s >= dayEnd) continue;
+      const ms = new Date(e.end_time) - s;
+      if (e.type === 'night') nightMs += ms;
+      else { napMs += ms; naps += 1; }
+    }
+    return { napMs, nightMs, naps, totalMs: napMs + nightMs };
+  }, [todayEntries]);
 
   async function handleSave() {
-    if (saving || !startedAt || elapsedMs <= 0) return;
+    if (saving || start == null || end == null || end <= start) return;
     setSaving(true);
+    buzz(15);
     try {
-      const startISO = new Date(startedAt).toISOString();
-      const endISO = new Date(startedAt + elapsedMs).toISOString();
-      await api.createEntry(startISO, endISO);
+      await api.createEntry(new Date(start).toISOString(), new Date(end).toISOString());
       reset();
+      showToast('Entry saved');
     } catch (err) {
       console.error(err);
-      alert('Failed to save. Try again.');
+      showToast('Failed to save', { type: 'error' });
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6 gap-10">
-      <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center h-full px-6 pt-4 gap-6">
+      {status === 'idle' && today.totalMs > 0 && (
+        <TodayPill naps={today.naps} totalMs={today.totalMs} />
+      )}
+
+      <TimeBar
+        start={start}
+        end={end}
+        status={status}
+        onChangeStart={updateStart}
+        onChangeEnd={updateEnd}
+      />
+
+      <div className="flex flex-col items-center gap-2 mt-2">
         <span className="text-xs uppercase tracking-[0.2em] text-neutral-500">
           {type === 'night' ? 'Night sleep' : 'Nap'}
         </span>
@@ -36,49 +95,136 @@ export default function RecordPage() {
         </div>
       </div>
 
-      {status === 'idle' && (
-        <button
-          onClick={start}
-          className="w-40 h-40 rounded-full bg-blue-600 active:bg-blue-700 text-white text-xl font-medium shadow-lg shadow-blue-900/50 transition-colors"
-        >
-          Start
-        </button>
+      <div className="flex-1" />
+
+      {status === 'idle' && latest && (
+        <LastNap entry={latest} />
       )}
 
-      {status === 'running' && (
-        <button
-          onClick={pause}
-          className="w-40 h-40 rounded-full bg-neutral-800 border-2 border-red-500 active:bg-neutral-700 text-red-400 text-xl font-medium transition-colors"
-        >
-          Stop
-        </button>
+      {awakeMs != null && awakeMs > 0 && (
+        <AwakeTracker ms={awakeMs} />
       )}
 
-      {status === 'paused' && (
-        <div className="flex flex-col items-center gap-4 w-full max-w-xs">
-          <div className="flex gap-3 w-full">
+      <div className="pb-20 w-full flex flex-col items-center gap-6">
+        {status === 'idle' && (
+          <button
+            onClick={() => { buzz(12); startTimer(); }}
+            className="w-40 h-40 rounded-full bg-blue-600 active:bg-blue-700 text-white text-xl font-medium shadow-lg shadow-blue-900/50 transition-colors"
+          >
+            Start
+          </button>
+        )}
+
+        {status === 'running' && (
+          <button
+            onClick={() => { buzz(12); pause(); }}
+            className="relative w-40 h-40 rounded-full bg-neutral-800 border-2 border-red-500 active:bg-neutral-700 text-red-400 text-xl font-medium transition-colors"
+          >
+            <span className="absolute inset-0 rounded-full border-2 border-red-500/60 animate-ping" />
+            <span className="relative">Stop</span>
+          </button>
+        )}
+
+        {status === 'paused' && (
+          <div className="flex flex-col items-center gap-4 w-full max-w-xs">
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => { buzz(10); resume(); }}
+                className="flex-1 py-4 rounded-xl bg-neutral-800 active:bg-neutral-700 text-neutral-100 font-medium"
+              >
+                Resume
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !(end > start)}
+                className="flex-1 py-4 rounded-xl bg-blue-600 active:bg-blue-700 disabled:opacity-50 text-white font-medium"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
             <button
-              onClick={resume}
-              className="flex-1 py-4 rounded-xl bg-neutral-800 active:bg-neutral-700 text-neutral-100 font-medium"
+              onClick={() => { buzz(5); reset(); }}
+              className="text-xs text-neutral-500 active:text-neutral-300 py-2"
             >
-              Resume
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 py-4 rounded-xl bg-blue-600 active:bg-blue-700 disabled:opacity-50 text-white font-medium"
-            >
-              {saving ? 'Saving…' : 'Save'}
+              Discard
             </button>
           </div>
-          <button
-            onClick={reset}
-            className="text-xs text-neutral-500 active:text-neutral-300 py-2"
-          >
-            Discard
-          </button>
-        </div>
-      )}
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TodayPill({ naps, totalMs }) {
+  return (
+    <div className="px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 flex items-center gap-2">
+      <span className="uppercase tracking-wider">Today</span>
+      <span className="text-neutral-200 tabular-nums">{naps} {naps === 1 ? 'nap' : 'naps'}</span>
+      <span className="text-neutral-600">·</span>
+      <span className="text-neutral-200 tabular-nums">{fmtHM(totalMs)}</span>
+    </div>
+  );
+}
+
+function LastNap({ entry }) {
+  const ms = new Date(entry.end_time) - new Date(entry.start_time);
+  const label = entry.type === 'night' ? 'Last night' : 'Last nap';
+  return (
+    <div className="text-[11px] text-neutral-500 text-center">
+      <span className="uppercase tracking-wider">{label}: </span>
+      <span className="text-neutral-400 tabular-nums">
+        {fmtTimeShort(entry.start_time)} – {fmtTimeShort(entry.end_time)} ({fmtHM(ms)})
+      </span>
+    </div>
+  );
+}
+
+function AwakeTracker({ ms }) {
+  const alarming = ms > AWAKE_ALARM_MS;
+  return (
+    <div
+      className={`px-4 py-2 rounded-full border text-sm flex items-center gap-2 ${
+        alarming
+          ? 'bg-red-950/60 border-red-800 text-red-300 animate-pulse'
+          : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+      }`}
+    >
+      <span className="text-[10px] uppercase tracking-wider">Awake for</span>
+      <span className="tabular-nums font-medium">{fmtHM(ms)}</span>
+    </div>
+  );
+}
+
+function TimeBar({ start, end, status, onChangeStart, onChangeEnd }) {
+  if (status === 'idle') {
+    return <div className="h-4" />;
+  }
+
+  const paused = status === 'paused';
+  const showEnd = paused && end != null;
+
+  return (
+    <div className="w-full flex flex-col items-center gap-2">
+      <TimeField label="Started" value={start} onChange={onChangeStart} showAdjust={paused} />
+      {showEnd && <TimeField label="Ended" value={end} onChange={onChangeEnd} showAdjust={paused} />}
+    </div>
+  );
+}
+
+function TimeField({ label, value, onChange, showAdjust }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-[10px] uppercase tracking-wider text-neutral-500 w-14 text-right">{label}</span>
+      <input
+        type="datetime-local"
+        value={value != null ? isoToLocalInput(new Date(value).toISOString()) : ''}
+        onChange={(e) => {
+          if (!e.target.value) return;
+          onChange(new Date(localInputToIso(e.target.value)).getTime());
+        }}
+        className="bg-transparent text-neutral-200 text-sm tabular-nums focus:outline-none border-b border-transparent focus:border-neutral-700 pb-0.5"
+      />
+      {showAdjust && <TimeAdjustButtons value={value} onChange={onChange} />}
     </div>
   );
 }

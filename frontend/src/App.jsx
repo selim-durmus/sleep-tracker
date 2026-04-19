@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import RecordPage from './pages/RecordPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
+import { ToastProvider } from './components/ToastProvider.jsx';
 
 export default function App() {
   const [tab, setTab] = useState('record');
 
   return (
-    <div className="flex flex-col h-full">
-      <main className="flex-1 overflow-y-auto">
-        {tab === 'record' && <RecordPage />}
-        {tab === 'reports' && <ReportsPage />}
-      </main>
-      <BottomNav tab={tab} setTab={setTab} />
-    </div>
+    <ToastProvider>
+      <div className="flex flex-col h-full">
+        <main className="flex-1 overflow-y-auto">
+          {tab === 'record' && <RecordPage />}
+          {tab === 'reports' && <ReportsPage />}
+        </main>
+        <BottomNav tab={tab} setTab={setTab} />
+      </div>
+    </ToastProvider>
   );
 }
 

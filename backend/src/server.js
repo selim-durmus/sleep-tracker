@@ -15,6 +15,11 @@ await app.register(cors, { origin: isDev ? true : false });
 
 app.get('/api/health', async () => ({ ok: true }));
 
+app.get('/api/entries/latest', async () => {
+  const row = db.prepare('SELECT * FROM entries ORDER BY end_time DESC LIMIT 1').get();
+  return row || null;
+});
+
 app.get('/api/entries', async (req) => {
   const { from, to } = req.query;
   let sql = 'SELECT * FROM entries';

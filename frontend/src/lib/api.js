@@ -1,8 +1,7 @@
 async function request(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
+  const headers = { ...options.headers };
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(path, { ...options, headers });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.status === 204 ? null : res.json();
 }
@@ -12,6 +11,7 @@ export const api = {
     const qs = from && to ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : '';
     return request(`/api/entries${qs}`);
   },
+  latestEntry: () => request('/api/entries/latest'),
   createEntry: (start_time, end_time) =>
     request('/api/entries', {
       method: 'POST',
