@@ -1,0 +1,12 @@
+services:
+  sleep-tracker:
+    build: .
+    image: sleep-tracker:latest
+    container_name: sleep-tracker
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      TZ: America/Denver
+    volumes:
+      - ./data:/data

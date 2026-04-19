@@ -70,7 +70,7 @@ function classifyType(isoStart) {
   return hour >= 18 || hour < 6 ? 'night' : 'nap';
 }
 
-const staticDir = join(__dirname, '..', '..', 'frontend', 'dist');
+const staticDir = process.env.STATIC_DIR || join(__dirname, '..', '..', 'frontend', 'dist');
 if (!isDev && existsSync(staticDir)) {
   await app.register(fastifyStatic, { root: staticDir });
   app.setNotFoundHandler((req, reply) => {
