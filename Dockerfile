@@ -16,7 +16,7 @@ COPY backend ./backend
 COPY frontend ./frontend
 
 RUN pnpm --filter frontend build \
-  && pnpm --filter backend --prod deploy /out
+  && pnpm --filter backend deploy --prod --legacy /out
 
 
 FROM node:22-slim AS runtime
