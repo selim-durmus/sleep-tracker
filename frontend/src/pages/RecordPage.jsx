@@ -10,7 +10,7 @@ import TimeAdjustButtons from '../components/TimeAdjustButtons.jsx';
 const AWAKE_ALARM_MS = 3.5 * 60 * 60 * 1000;
 
 export default function RecordPage() {
-  const { status, start, end, elapsedMs, startTimer, pause, resume, reset, updateStart, updateEnd } = useTimer();
+  const { status, start, end, elapsedMs, startTimer, pause, resume, reset, save, updateStart, updateEnd } = useTimer();
   const [saving, setSaving] = useState(false);
   const [latest, setLatest] = useState(null);
   const [todayEntries, setTodayEntries] = useState([]);
@@ -61,8 +61,7 @@ export default function RecordPage() {
     setSaving(true);
     buzz(15);
     try {
-      await api.createEntry(new Date(start).toISOString(), new Date(end).toISOString());
-      reset();
+      await save();
       showToast('Entry saved');
     } catch (err) {
       console.error(err);

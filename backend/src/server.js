@@ -70,6 +70,77 @@ function classifyType(isoStart) {
   return hour >= 18 || hour < 6 ? 'night' : 'nap';
 }
 
+function getTimer() {
+  return db.prepare('SELECT status, start_time, end_time, updated_at FROM timer_state WHERE id = 1').get();
+}
+
+function setTimer({ status, start_time = null, end_time = null }) {
+  db.prepare(
+    `UPDATE timer_state
+       SET status = ?, start_time = ?, end_time = ?, updated_at = datetime('now')
+       WHERE id = 1`
+  ).run(status, start_time, end_time);
+  return getTimer();
+}
+
+app.get('/api/timer', async () => getTimer());
+
+app.post('/api/timer/start', async (req, reply) => {
+  const state = getTimer();
+  if (state.status !== 'idle') return reply.code(409).send({ error: 'not idle', state });
+  return setTimer({ status: 'running', start_time: new Date().toISOString() });
+});
+
+app.post('/api/timer/pause', async (req, reply) => {
+  const state = getTimer();
+  if (state.status !== 'running') return reply.code(409).send({ error: 'not running', state });
+  return setTimer({ status: 'paused', start_time: state.start_time, end_time: new Date().toISOString() });
+});
+
+app.post('/api/timer/resume', async (req, reply) => {
+  const state = getTimer();
+  if (state.status !== 'paused') return reply.code(409).send({ error: 'not paused', state });
+  const idle = Date.now() - new Date(state.end_time).getTime();
+  const shiftedStart = new Date(new Date(state.start_time).getTime() + idle).toISOString();
+  return setTimer({ status: 'running', start_time: shiftedStart });
+});
+
+app.post('/api/timer/discard', async () => setTimer({ status: 'idle' }));
+
+app.post('/api/timer/save', async (req, reply) => {
+  const state = getTimer();
+  if (state.status !== 'paused' || !state.start_time || !state.end_time) {
+    return reply.code(409).send({ error: 'cannot save', state });
+  }
+  if (new Date(state.end_time) <= new Date(state.start_time)) {
+    return reply.code(400).send({ error: 'end must be after start', state });
+  }
+  const type = classifyType(state.start_time);
+  const tx = db.transaction(() => {
+    const info = db.prepare(
+      'INSERT INTO entries (start_time, end_time, type) VALUES (?, ?, ?)'
+    ).run(state.start_time, state.end_time, type);
+    return info.lastInsertRowid;
+  });
+  const entryId = tx();
+  const entry = db.prepare('SELECT * FROM entries WHERE id = ?').get(entryId);
+  const timer = setTimer({ status: 'idle' });
+  return { entry, timer };
+});
+
+app.patch('/api/timer', async (req, reply) => {
+  const { start_time, end_time } = req.body || {};
+  const state = getTimer();
+  if (state.status === 'idle') return reply.code(409).send({ error: 'idle' });
+  let newStart = start_time != null ? start_time : state.start_time;
+  let newEnd = end_time != null ? end_time : state.end_time;
+  if (state.status === 'paused' && newStart && newEnd && new Date(newStart) > new Date(newEnd)) {
+    if (start_time != null) newEnd = newStart;
+    else newStart = newEnd;
+  }
+  return setTimer({ status: state.status, start_time: newStart, end_time: newEnd });
+});
+
 const staticDir = process.env.STATIC_DIR || join(__dirname, '..', '..', 'frontend', 'dist');
 if (!isDev && existsSync(staticDir)) {
   await app.register(fastifyStatic, { root: staticDir });

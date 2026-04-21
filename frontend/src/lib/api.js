@@ -23,5 +23,13 @@ export const api = {
       body: JSON.stringify(patch)
     }),
   deleteEntry: (id) =>
-    request(`/api/entries/${id}`, { method: 'DELETE' })
+    request(`/api/entries/${id}`, { method: 'DELETE' }),
+  timerGet: () => request('/api/timer'),
+  timerStart: () => request('/api/timer/start', { method: 'POST' }),
+  timerPause: () => request('/api/timer/pause', { method: 'POST' }),
+  timerResume: () => request('/api/timer/resume', { method: 'POST' }),
+  timerSave: () => request('/api/timer/save', { method: 'POST' }),
+  timerDiscard: () => request('/api/timer/discard', { method: 'POST' }),
+  timerPatch: (body) =>
+    request('/api/timer', { method: 'PATCH', body: JSON.stringify(body) })
 };

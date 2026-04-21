@@ -1,87 +1,108 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '../lib/api.js';
 
-const STORAGE_KEY = 'timer.v2';
+const POLL_MS = 2000;
+const TICK_MS = 250;
 
-function readPersisted() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writePersisted(state) {
-  if (state && state.status !== 'idle') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-}
-
-const initialState = { status: 'idle', start: null, end: null };
+const idleState = { status: 'idle', start_time: null, end_time: null, updated_at: null };
 
 export function useTimer() {
-  const [state, setState] = useState(() => readPersisted() || initialState);
+  const [state, setState] = useState(idleState);
   const [, forceTick] = useState(0);
+  const inFlight = useRef(0);
 
-  useEffect(() => { writePersisted(state); }, [state]);
+  const applyState = useCallback((next) => {
+    if (next && next.status) setState(next);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    if (inFlight.current > 0) return;
+    try {
+      const data = await api.timerGet();
+      if (data && inFlight.current === 0) applyState(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [applyState]);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, POLL_MS);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   useEffect(() => {
     if (state.status !== 'running') return;
-    const id = setInterval(() => forceTick((n) => n + 1), 250);
+    const id = setInterval(() => forceTick((n) => n + 1), TICK_MS);
     return () => clearInterval(id);
   }, [state.status]);
 
-  const effectiveEnd = state.end ?? (state.status === 'running' ? Date.now() : null);
-  const elapsedMs = state.start != null && effectiveEnd != null
-    ? Math.max(0, effectiveEnd - state.start)
-    : 0;
+  const startMs = state.start_time ? new Date(state.start_time).getTime() : null;
+  const endMs = state.end_time
+    ? new Date(state.end_time).getTime()
+    : state.status === 'running' ? Date.now() : null;
+  const elapsedMs = startMs != null && endMs != null ? Math.max(0, endMs - startMs) : 0;
 
-  const startTimer = useCallback(() => {
-    const now = Date.now();
-    setState({ status: 'running', start: now, end: null });
+  const runAction = useCallback(async (fn) => {
+    inFlight.current += 1;
+    try {
+      const data = await fn();
+      return data;
+    } finally {
+      inFlight.current -= 1;
+    }
   }, []);
 
-  const pause = useCallback(() => {
-    setState((s) => ({ ...s, status: 'paused', end: Date.now() }));
-  }, []);
+  const startTimer = useCallback(async () => {
+    const data = await runAction(() => api.timerStart());
+    applyState(data);
+  }, [runAction, applyState]);
 
-  const resume = useCallback(() => {
-    setState((s) => {
-      const idle = Date.now() - s.end;
-      return { ...s, status: 'running', start: s.start + idle, end: null };
-    });
-  }, []);
+  const pause = useCallback(async () => {
+    const data = await runAction(() => api.timerPause());
+    applyState(data);
+  }, [runAction, applyState]);
 
-  const reset = useCallback(() => setState(initialState), []);
+  const resume = useCallback(async () => {
+    const data = await runAction(() => api.timerResume());
+    applyState(data);
+  }, [runAction, applyState]);
 
-  const updateStart = useCallback((ms) => {
-    setState((s) => {
-      const next = { ...s, start: ms };
-      if (s.status === 'paused' && s.end != null && ms > s.end) next.end = ms;
-      return next;
-    });
-  }, []);
+  const reset = useCallback(async () => {
+    const data = await runAction(() => api.timerDiscard());
+    applyState(data);
+  }, [runAction, applyState]);
 
-  const updateEnd = useCallback((ms) => {
-    setState((s) => {
-      if (s.status !== 'paused') return s;
-      const next = { ...s, end: ms };
-      if (ms < s.start) next.start = ms;
-      return next;
-    });
-  }, []);
+  const save = useCallback(async () => {
+    const result = await runAction(() => api.timerSave());
+    if (result && result.timer) applyState(result.timer);
+    return result ? result.entry : null;
+  }, [runAction, applyState]);
+
+  const updateStart = useCallback(async (ms) => {
+    const data = await runAction(() =>
+      api.timerPatch({ start_time: new Date(ms).toISOString() })
+    );
+    applyState(data);
+  }, [runAction, applyState]);
+
+  const updateEnd = useCallback(async (ms) => {
+    const data = await runAction(() =>
+      api.timerPatch({ end_time: new Date(ms).toISOString() })
+    );
+    applyState(data);
+  }, [runAction, applyState]);
 
   return {
     status: state.status,
-    start: state.start,
-    end: state.end,
+    start: startMs,
+    end: state.end_time ? new Date(state.end_time).getTime() : null,
     elapsedMs,
     startTimer,
     pause,
     resume,
     reset,
+    save,
     updateStart,
     updateEnd
   };

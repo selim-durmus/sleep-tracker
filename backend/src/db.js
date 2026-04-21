@@ -21,4 +21,13 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_entries_start ON entries(start_time);
+
+  CREATE TABLE IF NOT EXISTS timer_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'running', 'paused')),
+    start_time TEXT,
+    end_time TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  INSERT OR IGNORE INTO timer_state (id) VALUES (1);
 `);
