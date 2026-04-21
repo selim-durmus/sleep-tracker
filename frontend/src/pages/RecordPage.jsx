@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTimer } from '../hooks/useTimer.js';
+import { usePullToRefresh } from '../hooks/usePullToRefresh.js';
 import { api } from '../lib/api.js';
 import { formatDuration, classifyType } from '../lib/format.js';
 import {
@@ -16,11 +17,12 @@ import { computeSuggestion } from '../lib/schedule.js';
 import { buzz } from '../lib/haptic.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import TimeAdjustButtons from '../components/TimeAdjustButtons.jsx';
+import PullIndicator from '../components/PullIndicator.jsx';
 
 const AWAKE_ALARM_MS = 3.5 * 60 * 60 * 1000;
 
 export default function RecordPage() {
-  const { status, start, end, elapsedMs, startTimer, pause, resume, reset, save, updateStart, updateEnd } = useTimer();
+  const { status, start, end, elapsedMs, startTimer, pause, resume, reset, save, updateStart, updateEnd, refresh } = useTimer();
   const [saving, setSaving] = useState(false);
   const [latest, setLatest] = useState(null);
   const [todayEntries, setTodayEntries] = useState([]);
@@ -30,18 +32,27 @@ export default function RecordPage() {
   const classifyAt = start ?? Date.now();
   const type = classifyType(classifyAt);
 
+  const loadContext = useCallback(async () => {
+    const { start: dayStart, end: dayEnd } = dayWindow(new Date());
+    const [entry, rows] = await Promise.all([
+      api.latestEntry().catch(() => null),
+      api.listEntries(dayStart.toISOString(), dayEnd.toISOString()).catch(() => [])
+    ]);
+    setLatest(entry);
+    setTodayEntries(rows || []);
+  }, []);
+
   useEffect(() => {
     if (status !== 'idle') return;
-    let cancelled = false;
-    api.latestEntry()
-      .then((entry) => { if (!cancelled) setLatest(entry); })
-      .catch(console.error);
-    const { start: dayStart, end: dayEnd } = dayWindow(new Date());
-    api.listEntries(dayStart.toISOString(), dayEnd.toISOString())
-      .then((rows) => { if (!cancelled) setTodayEntries(rows); })
-      .catch(console.error);
-    return () => { cancelled = true; };
-  }, [status]);
+    loadContext();
+  }, [status, loadContext]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([refresh(), loadContext()]);
+  }, [refresh, loadContext]);
+
+  const { handlers: pullHandlers, pull, refreshing, threshold } = usePullToRefresh(handleRefresh);
+  const pullOffset = pull || (refreshing ? threshold : 0);
 
   useEffect(() => {
     if (status !== 'idle' || !latest) return;
@@ -87,7 +98,15 @@ export default function RecordPage() {
   }
 
   return (
-    <div className="flex flex-col items-center h-full px-6 pt-4 gap-6">
+    <div className="h-full relative overflow-hidden" {...pullHandlers}>
+      <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+      <div
+        className="flex flex-col items-center h-full px-6 pt-4 gap-6"
+        style={{
+          transform: `translateY(${pullOffset}px)`,
+          transition: pull ? 'none' : 'transform 200ms ease-out'
+        }}
+      >
       {status === 'idle' && today.totalMs > 0 && (
         <TodayPill naps={today.naps} totalMs={today.totalMs} />
       )}
@@ -166,6 +185,7 @@ export default function RecordPage() {
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

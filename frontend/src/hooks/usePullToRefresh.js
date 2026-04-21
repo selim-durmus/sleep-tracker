@@ -1,25 +1,39 @@
-import { useRef, useState, useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 const THRESHOLD = 70;
 const MAX = 120;
 const RESISTANCE = 0.55;
 
+function findScrollable(el) {
+  while (el && el.nodeType === 1) {
+    if (el.scrollHeight > el.clientHeight) {
+      const style = window.getComputedStyle(el);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+        return el;
+      }
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export function usePullToRefresh(onRefresh) {
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const ptrStartY = useRef(null);
-  const container = useRef(null);
+  const scrollable = useRef(null);
 
   const onTouchStart = useCallback((e) => {
     if (refreshing) return;
-    container.current = e.currentTarget;
+    scrollable.current = findScrollable(e.target);
     ptrStartY.current = null;
   }, [refreshing]);
 
   const onTouchMove = useCallback((e) => {
-    if (!container.current || refreshing) return;
+    if (refreshing) return;
     const finger = e.touches[0].clientY;
-    if (container.current.scrollTop > 0) {
+    const s = scrollable.current;
+    if (s && s.scrollTop > 0) {
       if (ptrStartY.current != null) {
         ptrStartY.current = null;
         setPull(0);
@@ -39,7 +53,6 @@ export function usePullToRefresh(onRefresh) {
   }, [refreshing]);
 
   const onTouchEnd = useCallback(async () => {
-    if (!container.current) return;
     const final = pull;
     ptrStartY.current = null;
     if (final >= THRESHOLD && onRefresh && !refreshing) {

@@ -2,20 +2,17 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '../lib/api.js';
 import { dayWindow, shiftDay, fmtDateLabel, fmtHour, fmtTimeShort, fmtHM, HOUR_MS, DAY_START_HOUR, isSameDay } from '../lib/time.js';
 import { useSwipe } from '../hooks/useSwipe.js';
-import { usePullToRefresh } from '../hooks/usePullToRefresh.js';
-import { mergeHandlers } from '../lib/mergeHandlers.js';
-import PullIndicator from '../components/PullIndicator.jsx';
 
 const HOUR_HEIGHT = 64;
 
-export default function DayView({ onEntryClick, reloadKey = 0 }) {
+export default function DayView({ onEntryClick, reloadKey = 0, refreshRef }) {
   const [date, setDate] = useState(() => new Date());
   const [entries, setEntries] = useState([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const { start, end } = useMemo(() => dayWindow(date), [date]);
 
   const reload = useCallback(() => {
-    api.listEntries(start.toISOString(), end.toISOString())
+    return api.listEntries(start.toISOString(), end.toISOString())
       .then(setEntries)
       .catch((err) => {
         console.error(err);
@@ -24,6 +21,14 @@ export default function DayView({ onEntryClick, reloadKey = 0 }) {
   }, [start, end]);
 
   useEffect(() => { reload(); }, [reload, reloadKey]);
+
+  useEffect(() => {
+    if (!refreshRef) return;
+    refreshRef.current = reload;
+    return () => {
+      if (refreshRef.current === reload) refreshRef.current = null;
+    };
+  }, [refreshRef, reload]);
 
   const viewingToday = useMemo(() => isSameDay(date, new Date()), [date]);
 
@@ -73,10 +78,6 @@ export default function DayView({ onEntryClick, reloadKey = 0 }) {
     onSwipeRight: () => setDate(shiftDay(date, -1))
   });
 
-  const { handlers: pullHandlers, pull, refreshing, threshold } = usePullToRefresh(reload);
-  const bodyHandlers = mergeHandlers(swipeHandlers, pullHandlers);
-  const bodyOffset = pull || (refreshing ? threshold : 0);
-
   return (
     <div className="flex flex-col h-full">
       <div
@@ -113,16 +114,9 @@ export default function DayView({ onEntryClick, reloadKey = 0 }) {
       </div>
 
       <div
-        className="flex-1 overflow-y-auto relative overscroll-contain"
-        {...bodyHandlers}
+        className="flex-1 overflow-y-auto overscroll-contain"
+        {...swipeHandlers}
       >
-        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
-        <div
-          style={{
-            transform: `translateY(${bodyOffset}px)`,
-            transition: pull ? 'none' : 'transform 200ms ease-out'
-          }}
-        >
         <div className="relative" style={{ height: HOUR_HEIGHT * 24 + 20 }}>
           {hourMarks.map(({ h, y }, i) => (
             <div key={i}>
@@ -168,7 +162,6 @@ export default function DayView({ onEntryClick, reloadKey = 0 }) {
               </div>
             )}
           </div>
-        </div>
         </div>
       </div>
     </div>

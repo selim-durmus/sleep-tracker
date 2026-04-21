@@ -5,8 +5,6 @@ import {
   fmtWeekRangeLabel, fmtHour, isSameDay
 } from '../lib/time.js';
 import { useSwipe } from '../hooks/useSwipe.js';
-import { usePullToRefresh } from '../hooks/usePullToRefresh.js';
-import PullIndicator from '../components/PullIndicator.jsx';
 
 const HOUR_HEIGHT = 48;
 const COL_WIDTH = 96;
@@ -14,7 +12,7 @@ const GUTTER_WIDTH = 48;
 const HEADER_HEIGHT = 44;
 const BODY_HEIGHT = HOUR_HEIGHT * 24 + 20;
 
-export default function WeekView({ onEntryClick, reloadKey = 0 }) {
+export default function WeekView({ onEntryClick, reloadKey = 0, refreshRef }) {
   const [anchor, setAnchor] = useState(() => new Date());
   const [entries, setEntries] = useState([]);
   const scrollRef = useRef(null);
@@ -33,6 +31,14 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
   }, [start, end]);
 
   useEffect(() => { reload(); }, [reload, reloadKey]);
+
+  useEffect(() => {
+    if (!refreshRef) return;
+    refreshRef.current = reload;
+    return () => {
+      if (refreshRef.current === reload) refreshRef.current = null;
+    };
+  }, [refreshRef, reload]);
 
   const days = useMemo(() => {
     const today = new Date();
@@ -71,9 +77,6 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
     onSwipeRight: () => setAnchor(shiftDate(anchor, -7))
   });
 
-  const { handlers: pullHandlers, pull, refreshing, threshold } = usePullToRefresh(reload);
-  const bodyOffset = pull || (refreshing ? threshold : 0);
-
   return (
     <div className="flex flex-col h-full">
       <div
@@ -103,20 +106,8 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
         >›</button>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-auto relative overscroll-contain"
-        {...pullHandlers}
-      >
-        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
-        <div
-          className="flex"
-          style={{
-            minWidth: GUTTER_WIDTH + 7 * COL_WIDTH,
-            transform: `translateY(${bodyOffset}px)`,
-            transition: pull ? 'none' : 'transform 200ms ease-out'
-          }}
-        >
+      <div ref={scrollRef} className="flex-1 overflow-auto overscroll-contain">
+        <div className="flex" style={{ minWidth: GUTTER_WIDTH + 7 * COL_WIDTH }}>
           <div
             className="sticky left-0 z-20 flex-shrink-0 bg-neutral-950 border-r border-neutral-800"
             style={{ width: GUTTER_WIDTH }}

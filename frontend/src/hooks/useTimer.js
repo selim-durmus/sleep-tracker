@@ -104,6 +104,7 @@ export function useTimer() {
     reset,
     save,
     updateStart,
-    updateEnd
+    updateEnd,
+    refresh
   };
 }
