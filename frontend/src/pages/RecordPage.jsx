@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTimer } from '../hooks/useTimer.js';
 import { api } from '../lib/api.js';
 import { formatDuration, classifyType } from '../lib/format.js';
-import { isoToLocalInput, localInputToIso, fmtHM, fmtTimeShort, dayWindow } from '../lib/time.js';
+import {
+  fmtHM,
+  fmtTimeShort,
+  dayWindow,
+  formatTimeInput,
+  applyTimeInput,
+  formatDateInput,
+  applyDateInput,
+  autoFormatTimeDigits
+} from '../lib/time.js';
+import { computeSuggestion } from '../lib/schedule.js';
 import { buzz } from '../lib/haptic.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import TimeAdjustButtons from '../components/TimeAdjustButtons.jsx';
@@ -42,6 +52,11 @@ export default function RecordPage() {
   const awakeMs = status === 'idle' && latest
     ? Date.now() - new Date(latest.end_time).getTime()
     : null;
+
+  const suggestion = useMemo(() => {
+    if (status !== 'idle') return null;
+    return computeSuggestion(latest);
+  }, [status, latest]);
 
   const today = useMemo(() => {
     const { start: dayStart, end: dayEnd } = dayWindow(new Date());
@@ -103,6 +118,8 @@ export default function RecordPage() {
       {awakeMs != null && awakeMs > 0 && (
         <AwakeTracker ms={awakeMs} />
       )}
+
+      {suggestion && <SuggestionPill suggestion={suggestion} />}
 
       <div className="pb-20 w-full flex flex-col items-center gap-6">
         {status === 'idle' && (
@@ -194,6 +211,31 @@ function AwakeTracker({ ms }) {
   );
 }
 
+function SuggestionPill({ suggestion }) {
+  const now = Date.now();
+  const diff = suggestion.atMs - now;
+  const past = diff < 0;
+  const timeStr = fmtTimeShort(new Date(suggestion.atMs).toISOString());
+  return (
+    <div
+      className={`px-4 py-2 rounded-xl border text-sm flex items-center gap-2 ${
+        past
+          ? 'bg-red-950/60 border-red-800 text-red-300'
+          : 'bg-neutral-900 border-neutral-800 text-neutral-300'
+      }`}
+    >
+      <span className="text-[10px] uppercase tracking-wider text-neutral-500">
+        {past ? `${suggestion.label} was due` : suggestion.label}
+      </span>
+      <span className="tabular-nums font-medium">{timeStr}</span>
+      <span className="text-neutral-600">·</span>
+      <span className={`tabular-nums text-xs ${past ? 'text-red-300' : 'text-neutral-500'}`}>
+        {past ? `${fmtHM(-diff)} ago` : `in ${fmtHM(diff)}`}
+      </span>
+    </div>
+  );
+}
+
 function TimeBar({ start, end, status, onChangeStart, onChangeEnd }) {
   if (status === 'idle') {
     return <div className="h-4" />;
@@ -211,17 +253,54 @@ function TimeBar({ start, end, status, onChangeStart, onChangeEnd }) {
 }
 
 function TimeField({ label, value, onChange, showAdjust }) {
+  const [timeStr, setTimeStr] = useState(() => formatTimeInput(value));
+  const [dateStr, setDateStr] = useState(() => formatDateInput(value));
+
+  useEffect(() => {
+    setTimeStr(formatTimeInput(value));
+    setDateStr(formatDateInput(value));
+  }, [value]);
+
+  const commitTime = () => {
+    const ms = applyTimeInput(value, timeStr);
+    if (ms != null) {
+      if (ms !== value) onChange(ms);
+    } else {
+      setTimeStr(formatTimeInput(value));
+    }
+  };
+
+  const commitDate = (str) => {
+    const ms = applyDateInput(value, str);
+    if (ms != null && ms !== value) onChange(ms);
+  };
+
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[10px] uppercase tracking-wider text-neutral-500 w-14 text-right">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-neutral-500 w-14 text-right">
+        {label}
+      </span>
       <input
-        type="datetime-local"
-        value={value != null ? isoToLocalInput(new Date(value).toISOString()) : ''}
-        onChange={(e) => {
-          if (!e.target.value) return;
-          onChange(new Date(localInputToIso(e.target.value)).getTime());
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]{1,2}:[0-9]{2}"
+        maxLength={5}
+        value={timeStr}
+        onChange={(e) => setTimeStr(autoFormatTimeDigits(e.target.value))}
+        onBlur={commitTime}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        className="bg-transparent text-neutral-200 text-sm tabular-nums focus:outline-none border-b border-transparent focus:border-neutral-700 pb-0.5"
+        className="bg-transparent text-neutral-200 text-sm tabular-nums focus:outline-none border-b border-neutral-800 focus:border-neutral-600 pb-0.5 w-14 text-center"
+      />
+      <input
+        type="date"
+        value={dateStr}
+        onChange={(e) => {
+          setDateStr(e.target.value);
+          if (e.target.value) commitDate(e.target.value);
+        }}
+        className="bg-transparent text-neutral-300 text-xs tabular-nums focus:outline-none border-b border-neutral-800 focus:border-neutral-600 pb-0.5"
       />
       {showAdjust && <TimeAdjustButtons value={value} onChange={onChange} />}
     </div>

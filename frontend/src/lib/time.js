@@ -61,6 +61,45 @@ export function localInputToIso(value) {
   return new Date(value).toISOString();
 }
 
+export function formatTimeInput(ms) {
+  if (ms == null) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function applyTimeInput(ms, timeStr) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim());
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (h > 23 || m > 59) return null;
+  const d = ms != null ? new Date(ms) : new Date();
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+export function formatDateInput(ms) {
+  if (ms == null) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function applyDateInput(ms, dateStr) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+  const d = ms != null ? new Date(ms) : new Date();
+  d.setFullYear(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+  return d.getTime();
+}
+
+export function autoFormatTimeDigits(input) {
+  const digits = input.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return digits.slice(0, 2) + ':' + digits.slice(2);
+}
+
 export function fmtHour(h) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const ampm = h < 12 ? 'AM' : 'PM';
