@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import {
   DAY_START_HOUR, HOUR_MS, weekStart, shiftDate,
   fmtWeekRangeLabel, fmtHour, isSameDay
 } from '../lib/time.js';
 import { useSwipe } from '../hooks/useSwipe.js';
+import { usePullToRefresh } from '../hooks/usePullToRefresh.js';
+import PullIndicator from '../components/PullIndicator.jsx';
 
 const HOUR_HEIGHT = 48;
 const COL_WIDTH = 96;
@@ -21,14 +23,16 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
   const start = useMemo(() => weekStart(anchor), [anchor]);
   const end = useMemo(() => shiftDate(start, 7), [start]);
 
-  useEffect(() => {
-    api.listEntries(start.toISOString(), end.toISOString())
+  const reload = useCallback(() => {
+    return api.listEntries(start.toISOString(), end.toISOString())
       .then(setEntries)
       .catch((err) => {
         console.error(err);
         setEntries([]);
       });
-  }, [start, end, reloadKey]);
+  }, [start, end]);
+
+  useEffect(() => { reload(); }, [reload, reloadKey]);
 
   const days = useMemo(() => {
     const today = new Date();
@@ -67,6 +71,9 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
     onSwipeRight: () => setAnchor(shiftDate(anchor, -7))
   });
 
+  const { handlers: pullHandlers, pull, refreshing, threshold } = usePullToRefresh(reload);
+  const bodyOffset = pull || (refreshing ? threshold : 0);
+
   return (
     <div className="flex flex-col h-full">
       <div
@@ -96,8 +103,20 @@ export default function WeekView({ onEntryClick, reloadKey = 0 }) {
         >›</button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-auto">
-        <div className="flex" style={{ minWidth: GUTTER_WIDTH + 7 * COL_WIDTH }}>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-auto relative overscroll-contain"
+        {...pullHandlers}
+      >
+        <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+        <div
+          className="flex"
+          style={{
+            minWidth: GUTTER_WIDTH + 7 * COL_WIDTH,
+            transform: `translateY(${bodyOffset}px)`,
+            transition: pull ? 'none' : 'transform 200ms ease-out'
+          }}
+        >
           <div
             className="sticky left-0 z-20 flex-shrink-0 bg-neutral-950 border-r border-neutral-800"
             style={{ width: GUTTER_WIDTH }}
