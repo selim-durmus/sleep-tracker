@@ -3,21 +3,13 @@ import { useTimer } from '../hooks/useTimer.js';
 import { usePullToRefresh } from '../hooks/usePullToRefresh.js';
 import { api } from '../lib/api.js';
 import { formatDuration, classifyType } from '../lib/format.js';
-import {
-  fmtHM,
-  fmtTimeShort,
-  dayWindow,
-  formatTimeInput,
-  applyTimeInput,
-  formatDateInput,
-  applyDateInput,
-  autoFormatTimeDigits
-} from '../lib/time.js';
+import { fmtHM, fmtTimeShort, dayWindow } from '../lib/time.js';
 import { computeSuggestion } from '../lib/schedule.js';
 import { buzz } from '../lib/haptic.js';
 import { useToast } from '../components/ToastProvider.jsx';
 import TimeAdjustButtons from '../components/TimeAdjustButtons.jsx';
 import PullIndicator from '../components/PullIndicator.jsx';
+import DateTimeInput from '../components/DateTimeInput.jsx';
 
 const AWAKE_ALARM_MS = 3.5 * 60 * 60 * 1000;
 
@@ -273,55 +265,12 @@ function TimeBar({ start, end, status, onChangeStart, onChangeEnd }) {
 }
 
 function TimeField({ label, value, onChange, showAdjust }) {
-  const [timeStr, setTimeStr] = useState(() => formatTimeInput(value));
-  const [dateStr, setDateStr] = useState(() => formatDateInput(value));
-
-  useEffect(() => {
-    setTimeStr(formatTimeInput(value));
-    setDateStr(formatDateInput(value));
-  }, [value]);
-
-  const commitTime = () => {
-    const ms = applyTimeInput(value, timeStr);
-    if (ms != null) {
-      if (ms !== value) onChange(ms);
-    } else {
-      setTimeStr(formatTimeInput(value));
-    }
-  };
-
-  const commitDate = (str) => {
-    const ms = applyDateInput(value, str);
-    if (ms != null && ms !== value) onChange(ms);
-  };
-
   return (
     <div className="flex items-center gap-3">
       <span className="text-[10px] uppercase tracking-wider text-neutral-500 w-14 text-right">
         {label}
       </span>
-      <input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]{1,2}:[0-9]{2}"
-        maxLength={5}
-        value={timeStr}
-        onChange={(e) => setTimeStr(autoFormatTimeDigits(e.target.value))}
-        onBlur={commitTime}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-        }}
-        className="bg-transparent text-neutral-200 text-sm tabular-nums focus:outline-none border-b border-neutral-800 focus:border-neutral-600 pb-0.5 w-14 text-center"
-      />
-      <input
-        type="date"
-        value={dateStr}
-        onChange={(e) => {
-          setDateStr(e.target.value);
-          if (e.target.value) commitDate(e.target.value);
-        }}
-        className="bg-transparent text-neutral-300 text-xs tabular-nums focus:outline-none border-b border-neutral-800 focus:border-neutral-600 pb-0.5"
-      />
+      <DateTimeInput value={value} onChange={onChange} />
       {showAdjust && <TimeAdjustButtons value={value} onChange={onChange} />}
     </div>
   );

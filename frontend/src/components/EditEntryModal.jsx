@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
-import { isoToLocalInput, localInputToIso } from '../lib/time.js';
 import { useToast } from './ToastProvider.jsx';
 import { buzz } from '../lib/haptic.js';
+import DateTimeInput from './DateTimeInput.jsx';
 
 export default function EditEntryModal({ entry, onClose, onSaved }) {
-  const [startLocal, setStartLocal] = useState(() => isoToLocalInput(entry.start_time));
-  const [endLocal, setEndLocal] = useState(() => isoToLocalInput(entry.end_time));
+  const [startMs, setStartMs] = useState(() => new Date(entry.start_time).getTime());
+  const [endMs, setEndMs] = useState(() => new Date(entry.end_time).getTime());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const showToast = useToast();
@@ -17,8 +17,8 @@ export default function EditEntryModal({ entry, onClose, onSaved }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const type = classify(startLocal);
-  const invalid = !(new Date(endLocal) > new Date(startLocal));
+  const type = classify(startMs);
+  const invalid = !(endMs > startMs);
 
   async function save() {
     if (invalid || busy) return;
@@ -27,8 +27,8 @@ export default function EditEntryModal({ entry, onClose, onSaved }) {
     buzz(10);
     try {
       await api.updateEntry(entry.id, {
-        start_time: localInputToIso(startLocal),
-        end_time: localInputToIso(endLocal)
+        start_time: new Date(startMs).toISOString(),
+        end_time: new Date(endMs).toISOString()
       });
       showToast('Entry updated');
       onSaved();
@@ -76,10 +76,10 @@ export default function EditEntryModal({ entry, onClose, onSaved }) {
 
         <div className="space-y-4">
           <Field label="Start">
-            <DateTimeInput value={startLocal} onChange={setStartLocal} />
+            <DateTimeInput value={startMs} onChange={setStartMs} />
           </Field>
           <Field label="End">
-            <DateTimeInput value={endLocal} onChange={setEndLocal} />
+            <DateTimeInput value={endMs} onChange={setEndMs} />
           </Field>
           <div className="flex items-center justify-between text-xs">
             <span className="text-neutral-500">Classification</span>
@@ -129,19 +129,7 @@ function Field({ label, children }) {
   );
 }
 
-function DateTimeInput({ value, onChange }) {
-  return (
-    <input
-      type="datetime-local"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-neutral-100 tabular-nums focus:outline-none focus:border-blue-500"
-    />
-  );
-}
-
-function classify(localInput) {
-  const d = new Date(localInput);
-  const h = d.getHours();
+function classify(ms) {
+  const h = new Date(ms).getHours();
   return h >= 18 || h < 6 ? 'night' : 'nap';
 }

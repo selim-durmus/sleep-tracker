@@ -100,6 +100,31 @@ export function autoFormatTimeDigits(input) {
   return digits.slice(0, 2) + ':' + digits.slice(2);
 }
 
+export function formatDateMDInput(ms) {
+  if (ms == null) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+}
+
+export function applyDateMDInput(ms, str) {
+  const match = /^(\d{1,2})\/(\d{1,2})$/.exec(str.trim());
+  if (!match) return null;
+  const month = parseInt(match[1], 10);
+  const day = parseInt(match[2], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = ms != null ? new Date(ms) : new Date();
+  d.setMonth(month - 1);
+  d.setDate(day);
+  return d.getTime();
+}
+
+export function autoFormatDateDigits(input) {
+  const digits = input.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return digits.slice(0, 2) + '/' + digits.slice(2);
+}
+
 export function fmtHour(h) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   const ampm = h < 12 ? 'AM' : 'PM';
